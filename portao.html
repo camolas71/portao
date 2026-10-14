@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portão</title>
+<style>
+  html,body{margin:0;height:100%;background:#111;color:#eee;font-family:system-ui,Arial,sans-serif}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px}
+  button{width:min(80vw,640px);height:min(45vh,340px);font-size:64px;font-weight:700;
+    border:none;border-radius:36px;background:#1f8f4e;color:#fff;cursor:pointer}
+  button:active{background:#167a40}
+  button:disabled{background:#555}
+  #msg{font-size:34px;min-height:44px;text-align:center}
+  #estado{font-size:20px;color:#888}
+</style>
+</head>
+<body>
+  <button id="b" disabled>ABRIR PORTÃO</button>
+  <div id="msg"></div>
+  <div id="estado">A ligar…</div>
+
+<script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
+<script>
+  // Os dados de ligação vêm no fim do endereço (depois do #), que nunca é enviado a nenhum servidor:
+  //   portao.html#h=SERVIDOR.emqxsl.com&u=UTILIZADOR&p=PALAVRAPASSE&k=CHAVE
+  const cfg = Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
+  const TOPICO = 'portao/abrir';
+  const b = document.getElementById('b');
+  const m = document.getElementById('msg');
+  const e = document.getElementById('estado');
+
+  if (!cfg.h || !cfg.u || !cfg.p || !cfg.k) {
+    e.textContent = 'Endereço incompleto (falta h, u, p ou k depois do #)';
+  } else {
+    const cliente = mqtt.connect('wss://' + cfg.h + ':8084/mqtt', {
+      username: cfg.u,
+      password: cfg.p,
+      clientId: 'portao-web-' + Math.random().toString(16).slice(2, 10),
+      clean: true,
+      reconnectPeriod: 2000,
+      connectTimeout: 10000
+    });
+
+    cliente.on('connect', () => { e.textContent = 'Ligado'; b.disabled = false; });
+    cliente.on('reconnect', () => { e.textContent = 'A ligar…'; b.disabled = true; });
+    cliente.on('offline', () => { e.textContent = 'Sem ligação'; b.disabled = true; });
+    cliente.on('error', (err) => { e.textContent = 'Erro: ' + err.message; });
+
+    b.onclick = () => {
+      b.disabled = true;
+      m.textContent = 'A enviar…';
+      const mensagem = JSON.stringify({ k: cfg.k, t: Date.now() });
+      cliente.publish(TOPICO, mensagem, { qos: 1, retain: false }, (err) => {
+        m.textContent = err ? '✖ Erro: ' + err.message : '✔ Impulso enviado';
+        setTimeout(() => { b.disabled = !cliente.connected; m.textContent = ''; }, 4000);
+      });
+    };
+  }
+</script>
+</body>
+</html>
